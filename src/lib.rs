@@ -7,7 +7,6 @@ pub struct Snd<T, Cont>(Sender<T>, Cont, PanicOnDrop);
 pub struct Recv<T, Cont>(Receiver<T>, Cont, PanicOnDrop);
 pub struct End;
 pub struct Return<'a>(PhantomData<&'a ()>);
-pub struct Recursion<Body>(Body);
 
 
 // Actual usage API
@@ -129,7 +128,8 @@ pub trait RestrictLifetime<'a> {
 }
 
 
-// TODO: explain
+// Return can always be made more restricted 
+// (implementation uses the fact that Return<'a> is covariant over 'a)
 impl<'a> RestrictLifetime<'a> for Return<'a> {
     type Restricted = Return<'a>;
 
