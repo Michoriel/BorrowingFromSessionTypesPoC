@@ -122,76 +122,51 @@ impl<T, Cont> Split<Return<'static>> for Recv<T, Cont> {
 
 
 // Lifetime attaching mechanism
-pub trait RestrictLifetime<'a> {
-    type Restricted: 'a;
-    fn restrict_to_ref<T>(self, reference: &'a T) -> Self::Restricted;
+// Reversed from first version, now this single trait is implemented for the final "restricted" type
+// This is simpler, means that we don't need a second trait just to help convey type information,
+// and means that borrowing errors don't accidentally also cause a type error (which obscures the
+// borrow error)
+pub trait Restricted<'a> {
+    type Unrestricted;
+    fn from_unrestricted<T>(unrestricted: Self::Unrestricted, _: &'a T) -> Self;
 }
 
 
-// Return can always be made more restricted 
-// (implementation uses the fact that Return<'a> is covariant over 'a)
-impl<'a> RestrictLifetime<'a> for Return<'a> {
-    type Restricted = Return<'a>;
+impl<'a> Restricted<'a> for Return<'a>
+{
+    type Unrestricted = Return<'static>;
 
-    fn restrict_to_ref<T>(self, _: &'a T) -> Self::Restricted {
+    fn from_unrestricted<T>(unrestricted: Self::Unrestricted, _: &'a T) -> Self {
         Return(PhantomData)
     }
 }
 
-// Send
-impl<'a, U: 'a, Cont> RestrictLifetime<'a> for Snd<U, Cont> where Cont: RestrictLifetime<'a> {
-    type Restricted = Snd<U, Cont::Restricted>;
 
-    fn restrict_to_ref<T>(self, reference: &'a T) -> Self::Restricted {
-        Snd(self.0, self.1.restrict_to_ref(reference), self.2)
+impl<'a, U, Cont> Restricted<'a> for Snd<U, Cont> where Cont: Restricted<'a> {
+    type Unrestricted = Snd<U, Cont::Unrestricted>;
+
+    fn from_unrestricted<T>(unrestricted: Self::Unrestricted, t: &'a T) -> Self {
+        Self(unrestricted.0, Cont::from_unrestricted(unrestricted.1, t), unrestricted.2)
     }
 }
 
 
-// Recv
-impl<'a, U: 'a, Cont> RestrictLifetime<'a> for Recv<U, Cont> where Cont: RestrictLifetime<'a> {
-    type Restricted = Recv<U, Cont::Restricted>;
+impl<'a, U, Cont> Restricted<'a> for Recv<U, Cont> where Cont: Restricted<'a> {
+    type Unrestricted = Recv<U, Cont::Unrestricted>;
 
-    fn restrict_to_ref<T>(self, reference: &'a T) -> Self::Restricted {
-        Recv(self.0, self.1.restrict_to_ref(reference), self.2)
+    fn from_unrestricted<T>(unrestricted: Self::Unrestricted, t: &'a T) -> Self {
+        Self(unrestricted.0, Cont::from_unrestricted(unrestricted.1, t), unrestricted.2)
     }
-}
-
-
-// In order to aid the type solver, we need to explain how to find the unrestricted ('static)
-// version of a borrowed session. If we do not, the trait solver will (correctly) identify that
-// multiple different types could provide the same restricted type (of course this wouldn't make
-// sense with what we want to do, but the trait solver doesn't know that)
-pub trait Restricted<'a> {
-    type Unrestricted: RestrictLifetime<'a, Restricted=Self>;
-}
-
-impl<'a> Restricted<'a> for Return<'a> {
-    type Unrestricted = Return<'a>;
-}
-impl<'a, T, Cont> Restricted<'a> for Snd<T, Cont> where Cont: Restricted<'a>, T: 'a {
-    type Unrestricted = Snd<T, Cont::Unrestricted>;
-}
-impl<'a, T, Cont> Restricted<'a> for Recv<T, Cont> where Cont: Restricted<'a>, T: 'a {
-    type Unrestricted = Recv<T, Cont::Unrestricted>;
-}
-
-
-// Just calls into the RestrictLifetime::restrict_to_ref method, but the extra bounds ensure that
-// it is unambiguous where the implementation is coming from
-// (it might also be possible to avoid needing this by re-working RestrictLifetime...)
-pub fn restrict_with_type_info<'a, Dest: Restricted<'a>, T>(unrestricted: Dest::Unrestricted, reference: &'a T) -> Dest {
-    unrestricted.restrict_to_ref(reference)
 }
 
 
 // End-user macros
 #[macro_export]
 macro_rules! split {
-    ($what: ident => $a: ident, $b: ident) => {
+    ($original: ident => $a: ident, $b: ident) => {
         // Split session - Lifetimes are not yet applied
-        let (unrestricted, $b) = unsafe {$crate::Split::split($what)};
-        let $a = $crate::restrict_with_type_info(unrestricted, &$b);
+        let (unrestricted, $b) = unsafe {$crate::Split::split($original)};
+        let $a = $crate::Restricted::from_unrestricted(unrestricted, &$b);
     }
 }
 
