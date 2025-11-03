@@ -173,14 +173,14 @@ macro_rules! split {
 #[macro_export]
 macro_rules! send {
     ($session: ident, $payload: expr) => {
-        let $session = Snd::send($session, $payload);
+        let $session = $crate::Snd::send($session, $payload);
     }
 }
 
 #[macro_export]
 macro_rules! recv {
     ($session: ident, $destination: ident) => {
-        let ($destination, $session) = Recv::recv($session);
+        let ($destination, $session) = $crate::Recv::recv($session);
     }
 }
 
