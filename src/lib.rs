@@ -77,6 +77,15 @@ impl Split<Return<'static>> for End {
     }
 }
 
+// Return can only be split into Return, Return
+impl<'a> Split<Return<'static>> for Return<'a> {
+    type Remainder = Return<'a>;
+
+    unsafe fn split(self) -> (Return<'static>, Self::Remainder) {
+        (Return(PhantomData), self)
+    }
+}
+
 
 // Send<T, Cont> can be split into Send<T, P>, Remainder for any P, Remainder than Cont can
 // be split into
